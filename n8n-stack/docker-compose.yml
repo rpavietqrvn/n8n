@@ -1,0 +1,337 @@
+# ===========================================
+#  CẤU HÌNH DOCKER-COMPOSE CHO STACK N8N-PRODUCTION
+#  - File này định nghĩa các service chạy trong stack n8n-production
+#  - Bao gồm: n8n, PostgreSQL, Redis
+# ===========================================
+
+services:
+  # ===========================================
+  #  N8N SERVICE - CORE WORKFLOW AUTOMATION
+  # ===========================================
+  n8n:
+    # Sử dụng image chính thức của n8n, phiên bản 1.68.1
+    image: n8nio/n8n:1.68.1
+    container_name: n8n  # Tên container
+    restart: unless-stopped  # Tự động khởi động lại nếu bị dừng
+    hostname: n8n  # Tên hostname bên trong container
+    user: node:node  # Chạy với quyền user node (không dùng root)
+    stop_grace_period: 1m  # Thời gian chờ trước khi dừng container
+
+    # ===========================================
+    #  CẤU HÌNH MÔI TRƯỜNG CHO N8N
+    # ===========================================
+    environment:
+      # CẤU HÌNH CƠ SỞ DỮ LIỆU
+      DB_TYPE: postgresdb  # Sử dụng PostgreSQL làm database
+      DB_POSTGRESDB_HOST: postgres  # Tên service Postgres trong mạng nội bộ
+      DB_POSTGRESDB_PORT: 5432  # Port mặc định của PostgreSQL
+      DB_POSTGRESDB_DATABASE: ${POSTGRES_DB}  # Tên database (lấy từ biến môi trường)
+      DB_POSTGRESDB_SCHEMA: ${POSTGRES_SCHEMA}  # Schema mặc định (thường là public)
+      DB_POSTGRESDB_USER: ${POSTGRES_NON_ROOT_USER}  # User không phải root để kết nối DB
+      DB_POSTGRESDB_PASSWORD: ${POSTGRES_NON_ROOT_PASSWORD}  # Mật khẩu user DB
+
+      # CẤU HÌNH THỜI GIAN
+      GENERIC_TIMEZONE: ${GENERIC_TIMEZONE}  # Múi giờ (vd: Asia/Ho_Chi_Minh)
+      TZ: ${GENERIC_TIMEZONE}  # Timezone cho container
+
+      # CẤU HÌNH MẠNG VÀ WEBHOOK
+      N8N_HOST: ${N8N_HOST}  # Địa chỉ host chạy n8n (vd: localhost hoặc domain)
+      N8N_PORT: ${N8N_PORT}  # Port chạy dịch vụ n8n (mặc định: 5678)
+      N8N_PROTOCOL: ${N8N_PROTOCOL}  # Giao thức http hoặc https
+      WEBHOOK_URL: ${WEBHOOK_URL}  # URL đầy đủ cho webhook (vd: https://domain.com/)
+      N8N_ENDPOINT_WEBHOOK: webhook  # Endpoint mặc định cho webhook
+      N8N_ENDPOINT_WEBHOOK_TEST: webhook-test  # Endpoint test webhook
+
+      # CẤU HÌNH REDIS QUEUE
+      # Sử dụng Redis làm hàng đợi để xử lý workflow bất đồng bộ
+      QUEUE_BULL_REDIS_HOST: ${QUEUE_BULL_REDIS_HOST}  # Tên service Redis trong mạng nội bộ
+      QUEUE_BULL_REDIS_PORT: ${QUEUE_BULL_REDIS_PORT}  # Port mặc định của Redis
+      QUEUE_BULL_REDIS_DB: ${QUEUE_BULL_REDIS_DB}  # Số database Redis (từ 0-15)
+      QUEUE_BULL_REDIS_PASSWORD: ${QUEUE_BULL_REDIS_PASSWORD}  # Mật khẩu Redis
+      EXECUTIONS_MODE: ${EXECUTIONS_MODE}  # Chế độ thực thi workflow (queue = bất đồng bộ)
+      QUEUE_BULL_REDIS_TIMEOUT: ${QUEUE_BULL_REDIS_TIMEOUT}  # Thời gian chờ kết nối Redis (ms)
+
+      # CẤU HÌNH HIỆU NĂNG
+      N8N_DISABLE_PINNED_DATA_NOTICES: "true"  # Tắt thông báo dữ liệu đã ghim
+      N8N_DISABLE_PRODUCTION_MAIN_PROCESS: "false"  # Bật process chính trong production
+      N8N_DISABLE_STATISTICS: "true"  # Tắt gửi thống kê sử dụng
+      N8N_METRICS: "true"  # Bật metrics để giám sát
+      N8N_METRICS_INCLUDE_VERSIONS: "false"  # Ẩn thông tin phiên bản trong metrics
+      N8N_DIAGNOSTICS_ENABLED: "false"  # Tắt chẩn đoán tự động
+      N8N_EMAIL_MODE: "smtp"  # Chế độ gửi email (smtp hoặc ses)
+      N8N_DISABLE_ENCRYPTION_KEY_ROTATION: "true"  # Tắt xoay khóa mã hóa tự động
+
+      # QUẢN LÝ QUYỀN VÀ CACHE
+      N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: ${N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS}  # Tự động sửa quyền file cấu hình
+      N8N_ENFORCE_CACHE_PERMISSIONS: ${N8N_ENFORCE_CACHE_PERMISSIONS}  # Tự động sửa quyền thư mục cache
+      N8N_DISABLE_CACHE: ${N8N_DISABLE_CACHE}  # Tắt cache (tốt cho môi trường production)
+
+      # BẢO MẬT
+      NODE_OPTIONS: ${NODE_OPTIONS}  # Giới hạn bộ nhớ cho Node.js (2GB)
+      N8N_VERSION_NOTIFICATIONS_ENABLED: ${N8N_VERSION_NOTIFICATIONS_ENABLED}  # Thông báo cập nhật
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}  # Khóa mã hóa dữ liệu nhạy cảm
+      N8N_SECURE_COOKIE: ${N8N_SECURE_COOKIE}  # Bật secure cookie (true nếu dùng HTTPS)
+      N8N_LOG_LEVEL: ${N8N_LOG_LEVEL}  # Mức độ log (error, warn, info, debug)
+      N8N_MAX_UPLOAD_SIZE: ${N8N_MAX_UPLOAD_SIZE}  # Kích thước upload tối đa (vd: 16MB)
+      NODE_ENV: ${NODE_ENV}  # Môi trường chạy (production/development)
+      DEBUG: ${DEBUG}  # Chế độ debug (bật/tắt)
+
+      # THÔNG BÁO QUA TELEGRAM
+      # (Tùy chọn) Cấu hình bot Telegram để nhận thông báo
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}  # Token của bot Telegram
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID}  # ID chat nhận thông báo
+
+      # CẬP NHẬT VÀ BẢO TRÌ
+      N8N_AUTO_UPDATE_CHECK: ${N8N_AUTO_UPDATE_CHECK}  # Tự động kiểm tra bản cập nhật
+
+    # CẤU HÌNH PORT VÀ MẠNG
+    ports:
+      - "${N8N_PORT}:5678"  # Map port từ host vào container (host_port:container_port)
+    networks:
+      - n8n_network  # Kết nối tới mạng nội bộ n8n_network
+
+    # CÁC VOLUMES ĐƯỢC MOUNT VÀO CONTAINER
+    volumes:
+      # Volume lưu trữ dữ liệu n8n (workflows, credentials, v.v.)
+      - n8n_storage:/home/node/.n8n
+      # Đồng bộ thời gian với host
+      - /etc/timezone:/etc/timezone:ro  # Read-only timezone
+      - /etc/localtime:/etc/localtime:ro  # Read-only local time
+
+    # PHỤ THUỘC DỊCH VỤ
+    # Chỉ khởi động khi các service phụ thuộc đã sẵn sàng
+    depends_on:
+      postgres:  # Chờ service PostgreSQL
+        condition: service_healthy  # Chỉ khi PostgreSQL đã healthy
+      redis:  # Chờ service Redis
+        condition: service_healthy  # Chỉ khi Redis đã healthy
+
+    # CẤU HÌNH TÀI NGUYÊN DOCKER SWARM/KUBERNETES
+    # (Chỉ có tác dụng khi triển khai với Docker Swarm/Kubernetes)
+    deploy:
+      resources:
+        limits:  # Giới hạn tối đa tài nguyên
+          cpus: '2'  # Tối đa 2 CPU cores
+          memory: 2G  # Tối đa 2GB RAM
+        reservations:  # Tài nguyên đảm bảo
+          memory: 1G  # Đảm bảo ít nhất 1GB RAM
+
+    # TĂNG CƯỜNG BẢO MẬT
+    security_opt:
+      - no-new-privileges:true  # Ngăn chặn leo thang đặc quyền
+
+    # SỬ DỤNG TMPFS CHO CÁC THƯ MỤC TẠM
+    # Giúp tăng hiệu năng và bảo mật bằng cách lưu trữ trong RAM
+    tmpfs:
+      - /tmp    # Thư mục tạm hệ thống
+      - /run    # Thư mục run-time
+      - /tmp/n8n  # Thư mục tạm của n8n
+
+    # CẤU HÌNH LOGGING
+    logging:
+      driver: "json-file"  # Định dạng log dạng JSON
+      options:
+        max-size: "10m"  # Kích thước tối đa mỗi file log (10MB)
+        max-file: "3"    # Số lượng file log tối đa (xoay vòng)
+        compress: "true"  # Nén file log cũ
+
+    # KIỂM TRA SỨC KHỎE (HEALTHCHECK)
+    # Tự động kiểm tra trạng thái hoạt động của n8n
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:5678/healthz"]  # Endpoint kiểm tra (dùng wget + IPv4)
+      interval: 30s  # Kiểm tra mỗi 30 giây
+      timeout: 10s   # Thời gian chờ tối đa
+      retries: 3     # Số lần thử lại trước khi đánh dấu lỗi
+      start_period: 60s  # Thời gian chờ trước khi bắt đầu kiểm tra
+
+  # ===========================================
+  #  N8N WORKER SERVICE - XỬ LÝ WORKFLOW BẤT ĐỒNG BỘ
+  #  - Chạy nhiều worker để xử lý workflow song song
+  #  - Scale worker: docker compose up -d --scale n8n-worker=3
+  # ===========================================
+  n8n-worker:
+    image: n8nio/n8n:1.68.1
+    container_name: n8n-worker  # Note: Comment out to enable scaling: --scale n8n-worker=3
+    restart: unless-stopped
+    hostname: n8n-worker
+    user: node:node
+    stop_grace_period: 1m
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["npx n8n worker"]  # Sử dụng npx để chạy n8n worker
+
+    environment:
+      # CẤU HÌNH CƠ SỞ DỮ LIỆU
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_PORT: 5432
+      DB_POSTGRESDB_DATABASE: ${POSTGRES_DB}
+      DB_POSTGRESDB_SCHEMA: ${POSTGRES_SCHEMA}
+      DB_POSTGRESDB_USER: ${POSTGRES_NON_ROOT_USER}
+      DB_POSTGRESDB_PASSWORD: ${POSTGRES_NON_ROOT_PASSWORD}
+
+      # CẤU HÌNH THỜI GIAN
+      GENERIC_TIMEZONE: ${GENERIC_TIMEZONE}
+      TZ: ${GENERIC_TIMEZONE}
+
+      # CẤU HÌNH REDIS QUEUE
+      QUEUE_BULL_REDIS_HOST: ${QUEUE_BULL_REDIS_HOST}
+      QUEUE_BULL_REDIS_PORT: ${QUEUE_BULL_REDIS_PORT}
+      QUEUE_BULL_REDIS_DB: ${QUEUE_BULL_REDIS_DB}
+      QUEUE_BULL_REDIS_PASSWORD: ${QUEUE_BULL_REDIS_PASSWORD}
+      EXECUTIONS_MODE: ${EXECUTIONS_MODE}
+      QUEUE_BULL_REDIS_TIMEOUT: ${QUEUE_BULL_REDIS_TIMEOUT}
+
+      # CẤU HÌNH HIỆU NĂNG & BẢO MẬT
+      N8N_DISABLE_PINNED_DATA_NOTICES: "true"
+      N8N_DISABLE_PRODUCTION_MAIN_PROCESS: "false"
+      N8N_DISABLE_STATISTICS: "true"
+      N8N_METRICS: "true"
+      N8N_METRICS_INCLUDE_VERSIONS: "false"
+      N8N_DIAGNOSTICS_ENABLED: "false"
+      N8N_EMAIL_MODE: "smtp"
+      N8N_DISABLE_ENCRYPTION_KEY_ROTATION: "true"
+
+      # QUẢN LÝ QUYỀN VÀ CACHE
+      N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: ${N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS}
+      N8N_ENFORCE_CACHE_PERMISSIONS: ${N8N_ENFORCE_CACHE_PERMISSIONS}
+      N8N_DISABLE_CACHE: ${N8N_DISABLE_CACHE}
+
+      # BẢO MẬT
+      NODE_OPTIONS: ${NODE_OPTIONS}
+      N8N_VERSION_NOTIFICATIONS_ENABLED: ${N8N_VERSION_NOTIFICATIONS_ENABLED}
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
+      N8N_SECURE_COOKIE: ${N8N_SECURE_COOKIE}
+      N8N_LOG_LEVEL: ${N8N_LOG_LEVEL}
+      N8N_MAX_UPLOAD_SIZE: ${N8N_MAX_UPLOAD_SIZE}
+      NODE_ENV: ${NODE_ENV}
+      DEBUG: ${DEBUG}
+
+      # THÔNG BÁO QUA TELEGRAM
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID}
+
+      # CẬP NHẬT VÀ BẢO TRÌ
+      N8N_AUTO_UPDATE_CHECK: ${N8N_AUTO_UPDATE_CHECK}
+
+    networks:
+      - n8n_network
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+    volumes:
+      - n8n_storage:/home/node/.n8n
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        compress: "true"
+
+  # ===========================================
+  #  POSTGRESQL SERVICE - CƠ SỞ DỮ LIỆU CHÍNH
+  # ===========================================
+  postgres:
+    image: postgres:14-alpine  # Sử dụng PostgreSQL 14 trên Alpine Linux (nhẹ)
+    restart: unless-stopped  # Tự động khởi động lại nếu bị dừng
+
+    # BIẾN MÔI TRƯỜNG CHO POSTGRES
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}  # Tên database (từ biến môi trường)
+      POSTGRES_USER: ${POSTGRES_NON_ROOT_USER}  # User không phải root
+      POSTGRES_PASSWORD: ${POSTGRES_NON_ROOT_PASSWORD}  # Mật khẩu user
+
+    # VOLUMES
+    volumes:
+      - postgres_data:/var/lib/postgresql/data  # Lưu trữ dữ liệu DB
+
+    # MẠNG
+    networks:
+      - n8n_network  # Kết nối tới mạng nội bộ
+
+    # KIỂM TRA SỨC KHỎE
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_NON_ROOT_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+    # CẤU HÌNH TÀI NGUYÊN
+    deploy:
+      resources:
+        limits:  # Giới hạn tối đa
+          cpus: '1'  # Tối đa 1 CPU core
+          memory: 1G  # Tối đa 1GB RAM
+        reservations:  # Tài nguyên đảm bảo
+          memory: 512M  # Đảm bảo ít nhất 512MB RAM
+
+  # ===========================================
+  #  REDIS SERVICE - CACHE VÀ HÀNG ĐỢI
+  # ===========================================
+  redis:
+    image: redis:7-alpine  # Sử dụng Redis 7 trên Alpine Linux (nhẹ)
+    container_name: n8n-redis  # Tên container
+    restart: unless-stopped  # Tự động khởi động lại nếu bị dừng
+
+    # LỆNH KHỞI ĐỘNG VỚI CÁC THAM SỐ
+    command: redis-server --requirepass ${REDIS_PASSWORD} --appendonly yes
+    # --requirepass: Đặt mật khẩu cho Redis
+    # --appendonly yes: Bật chế độ lưu trữ bền vững
+
+    # VOLUMES
+    volumes:
+      - redis_data:/data  # Lưu trữ dữ liệu Redis
+
+    # MẠNG
+    networks:
+      - n8n_network  # Kết nối tới mạng nội bộ
+
+    # KIỂM TRA SỨC KHỎE
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+    # CẤU HÌNH TÀI NGUYÊN
+    deploy:
+      resources:
+        limits:  # Giới hạn tối đa
+          cpus: '0.5'  # Tối đa 0.5 CPU core
+          memory: 512M  # Tối đa 512MB RAM
+        reservations:  # Tài nguyên đảm bảo
+          memory: 256M  # Đảm bảo ít nhất 256MB RAM
+
+# ===========================================
+#  ĐỊNH NGHĨA CÁC VOLUMES
+# ===========================================
+volumes:
+  # VOLUME LƯU TRỮ DỮ LIỆU N8N
+  # Chứa workflows, credentials, cài đặt, v.v.
+  n8n_storage:
+    name: n8n-storage  # Tên volume (để dễ nhận biết)
+    driver: local     # Sử dụng driver lưu trữ local
+
+  # VOLUME LƯU TRỮ DỮ LIỆU POSTGRESQL
+  # Chứa toàn bộ dữ liệu database
+  postgres_data:
+    name: n8n-postgres-data  # Tên volume
+    driver: local           # Sử dụng driver lưu trữ local
+
+  # VOLUME LƯU TRỮ DỮ LIỆU REDIS
+  # Chứa cache và dữ liệu hàng đợi
+  redis_data:
+    name: n8n-redis-data  # Tên volume
+    driver: local         # Sử dụng driver lưu trữ local
+
+# ===========================================
+#  ĐỊNH NGHĨA MẠNG
+# ===========================================
+networks:
+  n8n_network:  # Tên mạng nội bộ cho stack
+    driver: bridge  # Sử dụng bridge network (phù hợp cho single host)
+    name: n8n_network  # Tên đầy đủ của mạng

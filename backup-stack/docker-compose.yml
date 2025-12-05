@@ -1,0 +1,130 @@
+services:
+  # ============================
+  #  Container chạy script backup theo lịch
+  #  - Image nhẹ postgres:15-alpine
+  #  - Chạy cron mỗi ngày để gọi /scripts/n8n_backup.sh
+  #  - Đọc dữ liệu từ stack n8n-production (DB + volume n8n-storage)
+  #  - Ghi backup ra thư mục ./backup_volume trên host
+  # ============================
+  n8n-backup-runner:
+    image: postgres:15-alpine
+    container_name: n8n-backup-runner
+    restart: unless-stopped
+    depends_on:
+      # Chỉ chạy backup khi postgres-backup đã healthy
+      backup-postgres:
+        condition: service_healthy
+    volumes:
+      # Thư mục trên host lưu toàn bộ file backup (log, dump DB, tar dữ liệu)
+      - ./backup_volume:/backup
+      # Thư mục chứa script backup trên host, mount read-only vào container
+      - ./scripts:/scripts
+      # Volume external từ stack n8n-production, mount read-only để đọc dữ liệu file n8n
+      - n8n_data_from_stack:/n8n_data:ro
+    # File env chứa thông tin DB nguồn và DB backup
+    env_file:
+      - ./backup.env
+    # entrypoint: start shell -> set quyền thực thi cho script -> cấu hình cron -> chạy crond ở foreground
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        chmod +x /scripts/n8n_backup.sh
+        SCHEDULE="$${BACKUP_CRON_SCHEDULE:-0 1 * * *}"
+        echo "$${SCHEDULE} /scripts/n8n_backup.sh" > /etc/crontabs/root
+        echo "Configured cron: $${SCHEDULE}"
+        crond -f -l 2
+    networks:
+      - backup_network
+      - n8n_network
+
+  # ============================
+  #  Database backup riêng biệt
+  #  - Không ảnh hưởng tới DB chính của n8n-production
+  #  - Nhận dữ liệu từ script backup (restore dump)
+  # ============================
+  backup-postgres:
+    image: postgres:15-alpine
+    container_name: n8n-backup-postgres
+    restart: unless-stopped
+    env_file:
+      - ./backup.env
+
+    volumes:
+      # Volume cục bộ lưu dữ liệu của Postgres backup
+      - backup_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      # Kiểm tra postgres đã sẵn sàng nhận kết nối chưa
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - backup_network
+
+  # ============================
+  #  WATCHDOG - Giám sát N8N và tự động restore
+  #  - Kiểm tra health n8n mỗi 30s
+  #  - Nếu n8n chết > 3 lần liên tiếp -> auto restore
+  #  - Gửi thông báo qua Telegram
+  # ============================
+  n8n-watchdog:
+    image: docker:24-cli
+    container_name: n8n-watchdog
+    restart: unless-stopped
+    volumes:
+      # Mount Docker socket để chạy docker commands
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Scripts và backup
+      - ./scripts:/scripts
+      - ./backup_volume:/backup
+    env_file:
+      - ./backup.env
+    environment:
+      # Cấu hình watchdog
+      N8N_HEALTH_URL: http://n8n:5678/healthz
+      CHECK_INTERVAL: "30"
+      MAX_FAILURES: "3"
+      RESTORE_COOLDOWN: "300"
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        apk add --no-cache wget
+        chmod +x /scripts/watchdog.sh /scripts/restore_n8n.sh
+        echo "Starting N8N Watchdog..."
+        /scripts/watchdog.sh
+    networks:
+      - n8n_network
+    # Chỉ bật khi cần giám sát tự động
+    # Mặc định: tắt (profiles: ["watchdog"])
+    profiles:
+      - watchdog
+
+# ============================
+#  Network nội bộ cho stack n8n-backup
+#  - Cô lập với các stack khác, chỉ các service trong stack này mới nhìn thấy nhau
+# ============================
+networks:
+  backup_network:
+    external: false
+    name: n8n-backup-network
+  n8n_network:
+    external: true
+    name: n8n_network
+
+# ============================
+#  Volumes dùng trong stack n8n-backup
+# ============================
+volumes:
+  # Volume external trỏ tới volume n8n-storage của stack n8n-production
+  # - Cần chắc chắn volume n8n-storage đã tồn tại trước (do stack n8n-production tạo)
+  # - Chỉ mount read-only để tránh làm hỏng dữ liệu gốc
+  n8n_data_from_stack:
+    external: true
+    name: n8n-storage
+
+  # Volume local để lưu dữ liệu Postgres backup
+  backup_postgres_data:
+    external: false
+    name: n8n-backup-postgres-data

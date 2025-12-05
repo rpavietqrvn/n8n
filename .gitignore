@@ -1,0 +1,44 @@
+# ===========================================
+#  GITIGNORE FOR N8N PORTAINER PROJECT
+# ===========================================
+
+# Environment files (chứa credentials nhạy cảm)
+*.env
+!.env.example
+
+# Backup data (dung lượng lớn, không nên commit)
+backup-stack/backup_volume/
+backup-stack/backup_volume/**/*
+
+# Logs
+*.log
+**/logs/
+**/logs/**/*
+
+# Docker volumes data (tránh commit data local)
+**/data/
+postgres_data/
+redis_data/
+n8n_storage/
+
+# Temporary files
+*.tmp
+*.temp
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Desktop.ini

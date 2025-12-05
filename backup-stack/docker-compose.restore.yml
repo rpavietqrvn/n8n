@@ -1,0 +1,106 @@
+# ===========================================
+#  DOCKER-COMPOSE CHO N8N MỚI (RESTORED)
+#  - Dùng sau khi chạy script restore_n8n.sh
+#  - Trỏ tới Postgres mới và volume đã restore
+# ===========================================
+
+version: '3.8'
+
+services:
+  # ===========================================
+  #  N8N SERVICE - RESTORED
+  # ===========================================
+  n8n-restored:
+    image: n8nio/n8n:1.68.1
+    container_name: n8n-restored
+    restart: unless-stopped
+    hostname: n8n-restored
+    user: node:node
+    stop_grace_period: 1m
+
+    environment:
+      # CẤU HÌNH DATABASE - Trỏ tới Postgres mới
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: n8n-postgres-restored
+      DB_POSTGRESDB_PORT: 5432
+      DB_POSTGRESDB_DATABASE: n8n
+      DB_POSTGRESDB_SCHEMA: public
+      DB_POSTGRESDB_USER: n8n_user
+      DB_POSTGRESDB_PASSWORD: n8n_secure_password_change_me
+
+      # CẤU HÌNH THỜI GIAN
+      GENERIC_TIMEZONE: Asia/Ho_Chi_Minh
+      TZ: Asia/Ho_Chi_Minh
+
+      # CẤU HÌNH MẠNG VÀ WEBHOOK
+      N8N_HOST: localhost
+      N8N_PORT: 5679
+      N8N_PROTOCOL: http
+      WEBHOOK_URL: http://localhost:5679/
+
+      # CẤU HÌNH REDIS (nếu dùng queue mode)
+      # Bỏ comment nếu bạn muốn dùng Redis
+      # QUEUE_BULL_REDIS_HOST: redis
+      # QUEUE_BULL_REDIS_PORT: 6379
+      # QUEUE_BULL_REDIS_DB: 0
+      # QUEUE_BULL_REDIS_PASSWORD: your_redis_password
+      # EXECUTIONS_MODE: queue
+
+      # CẤU HÌNH HIỆU NĂNG
+      N8N_DISABLE_PRODUCTION_MAIN_PROCESS: "false"
+      N8N_METRICS: "true"
+      NODE_OPTIONS: --max-old-space-size=2048
+
+      # BẢO MẬT
+      N8N_LOG_LEVEL: info
+      NODE_ENV: production
+
+    # PORT - Đổi sang 5679 để không conflict với n8n cũ (nếu còn chạy)
+    ports:
+      - "5679:5678"
+
+    networks:
+      - n8n_network
+
+    # VOLUME - Dùng volume đã restore
+    volumes:
+      - n8n-storage-restored:/home/node/.n8n
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+
+    # Chờ Postgres sẵn sàng
+    depends_on:
+      - n8n-postgres-restored
+
+    # LOGGING
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        compress: "true"
+
+    # HEALTHCHECK
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5678/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+# ===========================================
+#  NETWORK
+# ===========================================
+networks:
+  n8n_network:
+    external: true
+    name: n8n_network
+
+# ===========================================
+#  VOLUMES
+# ===========================================
+volumes:
+  # Volume đã được restore bởi script restore_n8n.sh
+  n8n-storage-restored:
+    external: true
+    name: n8n-storage-restored

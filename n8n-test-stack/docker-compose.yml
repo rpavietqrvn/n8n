@@ -1,0 +1,361 @@
+version: '3.8'
+
+networks:
+  n8n_test_network:
+    driver: bridge
+    name: n8n_test_network
+
+volumes:
+  n8n_test_storage:
+    name: n8n_test_storage
+  postgres_test_data:
+    name: postgres_test_data
+  redis_test_data:
+    name: redis_test_data
+  nginx_ssl_certs:
+    name: nginx_ssl_certs
+  nginx_ssl_www:
+    name: nginx_ssl_www
+
+services:
+  # ==========================================
+  # NGINX REVERSE PROXY + SSL
+  # ==========================================
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: n8n-test-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - nginx_ssl_certs:/etc/letsencrypt
+      - nginx_ssl_www:/var/www/certbot
+    networks:
+      - n8n_test_network
+    depends_on:
+      - n8n-main
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ==========================================
+  # CERTBOT FOR SSL CERTIFICATES
+  # ==========================================
+  certbot:
+    image: certbot/certbot:latest
+    container_name: n8n-test-certbot
+    volumes:
+      - nginx_ssl_certs:/etc/letsencrypt
+      - nginx_ssl_www:/var/www/certbot
+    networks:
+      - n8n_test_network
+    profiles:
+      - ssl-setup
+    command: >
+      certonly --webroot --webroot-path=/var/www/certbot
+      --email ${SSL_EMAIL}
+      --agree-tos --no-eff-email
+      -d ${N8N_DOMAIN}
+
+  # ==========================================
+  # POSTGRESQL DATABASE
+  # ==========================================
+  postgres:
+    image: postgres:15-alpine
+    container_name: n8n-test-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    volumes:
+      - postgres_test_data:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    networks:
+      - n8n_test_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
+    security_opt:
+      - no-new-privileges:true
+
+  # ==========================================
+  # REDIS QUEUE SYSTEM
+  # ==========================================
+  redis:
+    image: redis:7-alpine
+    container_name: n8n-test-redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD}
+      --appendonly yes
+      --appendfsync everysec
+      --maxmemory 1gb
+      --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_test_data:/data
+    networks:
+      - n8n_test_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+    security_opt:
+      - no-new-privileges:true
+
+  # ==========================================
+  # N8N MAIN NODE (API + UI + Queue Manager)
+  # ==========================================
+  n8n-main:
+    image: n8nio/n8n:${N8N_VERSION:-latest}
+    container_name: n8n-test-main
+    restart: unless-stopped
+    environment:
+      # Database Configuration
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_PORT: 5432
+      DB_POSTGRESDB_DATABASE: ${POSTGRES_DB}
+      DB_POSTGRESDB_USER: ${POSTGRES_USER}
+      DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_POSTGRESDB_SCHEMA: public
+      
+      # Queue Configuration (Redis)
+      QUEUE_BULL_REDIS_HOST: redis
+      QUEUE_BULL_REDIS_PORT: 6379
+      QUEUE_BULL_REDIS_PASSWORD: ${REDIS_PASSWORD}
+      QUEUE_BULL_REDIS_DB: 0
+      
+      # Execution Mode
+      EXECUTIONS_MODE: queue
+      EXECUTIONS_DATA_PRUNE: true
+      EXECUTIONS_DATA_MAX_AGE: 168  # 7 days
+      
+      # Security & Authentication
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
+      N8N_USER_MANAGEMENT_JWT_SECRET: ${N8N_JWT_SECRET}
+      N8N_SECURE_COOKIE: true
+      N8N_PROTOCOL: https
+      N8N_HOST: ${N8N_DOMAIN}
+      N8N_PORT: 5678
+      
+      # Webhook Configuration
+      WEBHOOK_URL: https://${N8N_DOMAIN}
+      
+      # Performance & Scaling
+      N8N_PAYLOAD_SIZE_MAX: 16
+      N8N_METRICS: true
+      N8N_LOG_LEVEL: info
+      
+      # Test Environment Specific
+      NODE_ENV: test
+      N8N_DIAGNOSTICS_ENABLED: false
+      N8N_VERSION_NOTIFICATIONS_ENABLED: false
+      
+      # Timezone
+      GENERIC_TIMEZONE: ${TIMEZONE:-Asia/Ho_Chi_Minh}
+      TZ: ${TIMEZONE:-Asia/Ho_Chi_Minh}
+    
+    volumes:
+      - n8n_test_storage:/home/node/.n8n
+      - ./n8n/custom-nodes:/home/node/.n8n/custom:ro
+    
+    networks:
+      - n8n_test_network
+    
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:5678/healthz || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '2.0'
+        reservations:
+          memory: 1G
+          cpus: '0.5'
+    
+    security_opt:
+      - no-new-privileges:true
+    
+    user: "1000:1000"
+
+  # ==========================================
+  # N8N WORKER NODES (Scalable)
+  # ==========================================
+  n8n-worker:
+    image: n8nio/n8n:${N8N_VERSION:-latest}
+    restart: unless-stopped
+    command: n8n worker
+    environment:
+      # Database Configuration (same as main)
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_PORT: 5432
+      DB_POSTGRESDB_DATABASE: ${POSTGRES_DB}
+      DB_POSTGRESDB_USER: ${POSTGRES_USER}
+      DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_POSTGRESDB_SCHEMA: public
+      
+      # Queue Configuration (Redis)
+      QUEUE_BULL_REDIS_HOST: redis
+      QUEUE_BULL_REDIS_PORT: 6379
+      QUEUE_BULL_REDIS_PASSWORD: ${REDIS_PASSWORD}
+      QUEUE_BULL_REDIS_DB: 0
+      
+      # Worker Configuration
+      EXECUTIONS_MODE: queue
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
+      
+      # Performance
+      N8N_LOG_LEVEL: info
+      NODE_ENV: test
+      
+      # Timezone
+      GENERIC_TIMEZONE: ${TIMEZONE:-Asia/Ho_Chi_Minh}
+      TZ: ${TIMEZONE:-Asia/Ho_Chi_Minh}
+    
+    volumes:
+      - n8n_test_storage:/home/node/.n8n:ro
+      - ./n8n/custom-nodes:/home/node/.n8n/custom:ro
+    
+    networks:
+      - n8n_test_network
+    
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      n8n-main:
+        condition: service_healthy
+    
+    healthcheck:
+      test: ["CMD-SHELL", "ps aux | grep '[n]8n worker' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
+          cpus: '0.25'
+      replicas: 2
+    
+    security_opt:
+      - no-new-privileges:true
+    
+    user: "1000:1000"
+
+  # ==========================================
+  # MONITORING & HEALTH CHECK
+  # ==========================================
+  healthcheck:
+    image: alpine:latest
+    container_name: n8n-test-healthcheck
+    restart: unless-stopped
+    command: >
+      sh -c "
+      apk add --no-cache curl &&
+      while true; do
+        echo '[$(date)] Health Check Started'
+        
+        # Check N8N Main
+        if curl -f -s http://n8n-main:5678/healthz > /dev/null; then
+          echo '[$(date)] ✅ N8N Main: Healthy'
+        else
+          echo '[$(date)] ❌ N8N Main: Unhealthy'
+        fi
+        
+        # Check PostgreSQL
+        if nc -z postgres 5432; then
+          echo '[$(date)] ✅ PostgreSQL: Healthy'
+        else
+          echo '[$(date)] ❌ PostgreSQL: Unhealthy'
+        fi
+        
+        # Check Redis
+        if nc -z redis 6379; then
+          echo '[$(date)] ✅ Redis: Healthy'
+        else
+          echo '[$(date)] ❌ Redis: Unhealthy'
+        fi
+        
+        echo '[$(date)] Health Check Completed'
+        sleep 60
+      done
+      "
+    networks:
+      - n8n_test_network
+    depends_on:
+      - n8n-main
+      - postgres
+      - redis
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+          cpus: '0.1'
+
+  # ==========================================
+  # LOAD TESTING TOOL
+  # ==========================================
+  load-tester:
+    image: alpine:latest
+    container_name: n8n-test-load-tester
+    networks:
+      - n8n_test_network
+    volumes:
+      - ./testing:/testing:ro
+    profiles:
+      - testing
+    command: >
+      sh -c "
+      apk add --no-cache curl jq &&
+      echo 'Load Testing Tools Ready' &&
+      tail -f /dev/null
+      "
