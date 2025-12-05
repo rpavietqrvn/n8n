@@ -55,7 +55,7 @@ check_health() {
 # Function to create simple workflow via API
 create_simple_workflow() {
     local workflow_name="LoadTest_Simple_$1"
-    local webhook_id=$(uuidgen | tr '[:upper:]' '[:lower:]')
+    local webhook_id="test-simple-$(date +%s)-$RANDOM"
     
     local workflow_json='{
         "name": "'$workflow_name'",
@@ -119,7 +119,7 @@ create_simple_workflow() {
 # Function to create heavy workflow via API
 create_heavy_workflow() {
     local workflow_name="LoadTest_Heavy_$1"
-    local webhook_id=$(uuidgen | tr '[:upper:]' '[:lower:]')
+    local webhook_id="test-heavy-$(date +%s)-$RANDOM"
     
     local workflow_json='{
         "name": "'$workflow_name'",

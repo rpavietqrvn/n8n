@@ -39,7 +39,7 @@ log_message() {
 
 # Function to handle errors
 handle_error() {
-    echo -e "${RED}❌ Error: $1${NC}"
+    echo -e "${RED} Error: $1${NC}"
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: $1" >> $BACKUP_DIR/logs/backup_$TIMESTAMP.log
     exit 1
 }
@@ -55,7 +55,7 @@ if ! docker ps | grep -q "n8n-test-main"; then
 fi
 
 # 1. Backup PostgreSQL Database
-log_message "🗄️ Starting PostgreSQL backup..."
+log_message " Starting PostgreSQL backup..."
 
 DB_BACKUP_FILE="$BACKUP_DIR/database/n8n_test_db_$TIMESTAMP.sql"
 docker exec n8n-test-postgres pg_dump \
@@ -69,17 +69,17 @@ docker exec n8n-test-postgres pg_dump \
 if [ $? -eq 0 ]; then
     # Compress the backup
     gzip $DB_BACKUP_FILE
-    log_message "✅ Database backup completed: ${DB_BACKUP_FILE}.gz"
+    log_message " Database backup completed: ${DB_BACKUP_FILE}.gz"
     
     # Get backup size
     BACKUP_SIZE=$(du -h "${DB_BACKUP_FILE}.gz" | cut -f1)
-    log_message "📊 Database backup size: $BACKUP_SIZE"
+    log_message " Database backup size: $BACKUP_SIZE"
 else
     handle_error "Database backup failed"
 fi
 
 # 2. Backup N8N Volume Data
-log_message "📁 Starting N8N volume backup..."
+log_message " Starting N8N volume backup..."
 
 VOLUME_BACKUP_FILE="$BACKUP_DIR/volumes/n8n_test_volume_$TIMESTAMP.tar.gz"
 docker run --rm \
@@ -89,17 +89,17 @@ docker run --rm \
     tar czf /backup/n8n_test_volume_$TIMESTAMP.tar.gz -C /source .
 
 if [ $? -eq 0 ]; then
-    log_message "✅ Volume backup completed: $VOLUME_BACKUP_FILE"
+    log_message " Volume backup completed: $VOLUME_BACKUP_FILE"
     
     # Get backup size
     VOLUME_SIZE=$(du -h "$VOLUME_BACKUP_FILE" | cut -f1)
-    log_message "📊 Volume backup size: $VOLUME_SIZE"
+    log_message " Volume backup size: $VOLUME_SIZE"
 else
     handle_error "Volume backup failed"
 fi
 
 # 3. Backup Configuration Files
-log_message "⚙️ Starting configuration backup..."
+log_message " Starting configuration backup..."
 
 CONFIG_BACKUP_FILE="$BACKUP_DIR/volumes/n8n_test_config_$TIMESTAMP.tar.gz"
 tar czf $CONFIG_BACKUP_FILE \
@@ -111,16 +111,16 @@ tar czf $CONFIG_BACKUP_FILE \
     2>/dev/null || true
 
 if [ $? -eq 0 ]; then
-    log_message "✅ Configuration backup completed: $CONFIG_BACKUP_FILE"
+    log_message " Configuration backup completed: $CONFIG_BACKUP_FILE"
 else
-    log_message "⚠️ Configuration backup had some warnings (non-critical)"
+    log_message " Configuration backup had some warnings (non-critical)"
 fi
 
 # 4. Test Database Backup Integrity
-log_message "🔍 Testing backup integrity..."
+log_message " Testing backup integrity..."
 
 # Create temporary test container
-docker run -d --name postgres-test-restore \
+docker run -d --name n8n-test-postgres-restore \
     --network n8n_test_network \
     -e POSTGRES_DB=test_restore \
     -e POSTGRES_USER=$POSTGRES_USER \
@@ -131,31 +131,31 @@ docker run -d --name postgres-test-restore \
 sleep 10
 
 # Test restore
-if docker exec postgres-test-restore psql -U $POSTGRES_USER -d test_restore -c "SELECT 1;" > /dev/null 2>&1; then
+if docker exec n8n-test-postgres-restore psql -U $POSTGRES_USER -d test_restore -c "SELECT 1;" > /dev/null 2>&1; then
     # Try to restore the backup
-    gunzip -c "${DB_BACKUP_FILE}.gz" | docker exec -i postgres-test-restore psql -U $POSTGRES_USER -d test_restore > /dev/null 2>&1
+    gunzip -c "${DB_BACKUP_FILE}.gz" | docker exec -i n8n-test-postgres-restore psql -U $POSTGRES_USER -d test_restore > /dev/null 2>&1
     
     if [ $? -eq 0 ]; then
         # Check if tables exist
-        TABLE_COUNT=$(docker exec postgres-test-restore psql -U $POSTGRES_USER -d test_restore -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public';" | tr -d ' ')
+        TABLE_COUNT=$(docker exec n8n-test-postgres-restore psql -U $POSTGRES_USER -d test_restore -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public';" | tr -d ' ')
         
         if [ "$TABLE_COUNT" -gt 0 ]; then
-            log_message "✅ Backup integrity verified: $TABLE_COUNT tables restored"
+            log_message " Backup integrity verified: $TABLE_COUNT tables restored"
         else
-            log_message "⚠️ Backup integrity warning: No tables found in restored database"
+            log_message " Backup integrity warning: No tables found in restored database"
         fi
     else
-        log_message "⚠️ Backup integrity test failed: Could not restore backup"
+        log_message " Backup integrity test failed: Could not restore backup"
     fi
 else
-    log_message "⚠️ Could not connect to test database for integrity check"
+    log_message " Could not connect to test database for integrity check"
 fi
 
 # Cleanup test container
-docker rm -f postgres-test-restore > /dev/null 2>&1
+docker rm -f n8n-test-postgres-restore > /dev/null 2>&1
 
 # 5. Cleanup Old Backups
-log_message "🧹 Cleaning up old backups (older than $RETENTION_DAYS days)..."
+log_message " Cleaning up old backups (older than $RETENTION_DAYS days)..."
 
 # Remove old database backups
 find $BACKUP_DIR/database -name "*.sql.gz" -mtime +$RETENTION_DAYS -delete 2>/dev/null || true
@@ -165,10 +165,10 @@ find $BACKUP_DIR/volumes -name "*.tar.gz" -mtime +$RETENTION_DAYS -delete 2>/dev
 find $BACKUP_DIR/logs -name "*.log" -mtime +$RETENTION_DAYS -delete 2>/dev/null || true
 
 REMAINING_BACKUPS=$(find $BACKUP_DIR -name "*$TIMESTAMP*" | wc -l)
-log_message "🗂️ Cleanup completed. Current backup files: $REMAINING_BACKUPS"
+log_message " Cleanup completed. Current backup files: $REMAINING_BACKUPS"
 
 # 6. Generate Backup Report
-log_message "📋 Generating backup report..."
+log_message " Generating backup report..."
 
 REPORT_FILE="$BACKUP_DIR/logs/backup_report_$TIMESTAMP.txt"
 cat > $REPORT_FILE << EOF
@@ -194,36 +194,36 @@ Retention Policy: $RETENTION_DAYS days
 Status: SUCCESS
 EOF
 
-log_message "✅ Backup report generated: $REPORT_FILE"
+log_message " Backup report generated: $REPORT_FILE"
 
 # 7. Send Telegram Notification (if configured)
 if [ ! -z "$TELEGRAM_BOT_TOKEN" ] && [ ! -z "$TELEGRAM_CHAT_ID" ]; then
-    log_message "📱 Sending Telegram notification..."
+    log_message " Sending Telegram notification..."
     
-    MESSAGE="🔄 N8N Test Backup Completed
+    MESSAGE=" N8N Test Backup Completed
     
-📅 Time: $(date)
-💾 Database: $BACKUP_SIZE
-📁 Volume: $VOLUME_SIZE
-🔍 Tables: $TABLE_COUNT
-✅ Status: SUCCESS"
+ Time: $(date)
+ Database: $BACKUP_SIZE
+ Volume: $VOLUME_SIZE
+ Tables: $TABLE_COUNT
+ Status: SUCCESS"
 
     curl -s -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage" \
         -d chat_id=$TELEGRAM_CHAT_ID \
         -d text="$MESSAGE" > /dev/null 2>&1
     
     if [ $? -eq 0 ]; then
-        log_message "✅ Telegram notification sent"
+        log_message " Telegram notification sent"
     else
-        log_message "⚠️ Failed to send Telegram notification"
+        log_message " Failed to send Telegram notification"
     fi
 fi
 
 # Final Summary
 echo -e "\n${GREEN}===========================================${NC}"
-echo -e "${GREEN}🎉 Backup Completed Successfully!${NC}"
+echo -e "${GREEN} Backup Completed Successfully!${NC}"
 echo -e "${GREEN}===========================================${NC}"
-echo -e "${GREEN}📊 Summary:${NC}"
+echo -e "${GREEN} Summary:${NC}"
 echo -e "${YELLOW}• Database backup: ${BACKUP_SIZE}${NC}"
 echo -e "${YELLOW}• Volume backup: ${VOLUME_SIZE}${NC}"
 echo -e "${YELLOW}• Tables verified: ${TABLE_COUNT}${NC}"
@@ -234,4 +234,4 @@ echo -e "${YELLOW}• $VOLUME_BACKUP_FILE${NC}"
 echo -e "${YELLOW}• $CONFIG_BACKUP_FILE${NC}"
 echo -e "${YELLOW}• $REPORT_FILE${NC}"
 
-log_message "🏁 Backup process completed successfully"
+log_message " Backup process completed successfully"
