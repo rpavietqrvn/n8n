@@ -8,7 +8,7 @@ Tài liệu mô tả sự thay đổi từ **N8N cũ (MySQL, Single Container)**
 
 | Tiêu chí | Phiên bản CŨ | Phiên bản MỚI |
 |----------|--------------|---------------|
-| **Database** | MySQL 8.0 | PostgreSQL 15 |
+| **Database** | MySQL 8.0 | PostgreSQL 14 (prod) + PostgreSQL 15 (backup verify) |
 | **Queue System** | ❌ Không có | ✅ Redis 7 (BullMQ) |
 | **Worker** | ❌ Không có | ✅ N8N Worker (scalable) |
 | **Backup** | ❌ Thủ công | ✅ Tự động (cron) |
@@ -160,7 +160,7 @@ services:
 services:
   # PostgreSQL - Database chính
   postgres:
-    image: postgres:15-alpine
+    image: postgres:14-alpine
     healthcheck: ✅
     volumes:
       - n8n-postgres-data:/var/lib/postgresql/data
@@ -172,7 +172,7 @@ services:
     
   # N8N Main - Web UI + API
   n8n:
-    image: n8nio/n8n:1.68.1
+    image: n8nio/n8n:latest
     depends_on: [postgres, redis]
     environment:
       - DB_TYPE=postgresdb
@@ -182,7 +182,7 @@ services:
     
   # N8N Worker - Xử lý queue (có thể scale)
   n8n-worker:
-    image: n8nio/n8n:1.68.1
+    image: n8nio/n8n:latest
     command: worker
     deploy:
       replicas: 1  # Có thể tăng lên 3, 5...

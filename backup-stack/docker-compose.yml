@@ -83,6 +83,7 @@ services:
     environment:
       # Cấu hình watchdog
       N8N_HEALTH_URL: http://n8n:5678/healthz
+      RESTORED_HEALTH_URL: http://n8n-restored:5678/healthz
       CHECK_INTERVAL: "30"
       MAX_FAILURES: "3"
       RESTORE_COOLDOWN: "300"
@@ -94,6 +95,7 @@ services:
         chmod +x /scripts/watchdog.sh /scripts/restore_n8n.sh
         echo "Starting N8N Watchdog..."
         /scripts/watchdog.sh
+
     networks:
       - n8n_network
     # Chỉ bật khi cần giám sát tự động

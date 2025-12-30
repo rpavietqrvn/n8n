@@ -12,6 +12,7 @@ set -eu
 #  Cấu hình
 # ============================
 N8N_HEALTH_URL="${N8N_HEALTH_URL:-http://n8n:5678/healthz}"
+RESTORED_HEALTH_URL="${RESTORED_HEALTH_URL:-http://n8n-restored:5678/healthz}"
 CHECK_INTERVAL="${CHECK_INTERVAL:-30}"        # Kiểm tra mỗi 30 giây
 MAX_FAILURES="${MAX_FAILURES:-3}"             # Số lần fail trước khi restore
 RESTORE_COOLDOWN="${RESTORE_COOLDOWN:-300}"   # Đợi 5 phút sau mỗi lần restore
@@ -47,6 +48,17 @@ check_n8n_health() {
         return 0  # Healthy
     else
         return 1  # Unhealthy
+    fi
+}
+
+# ============================
+#  Kiểm tra health của n8n-restored (sau khi auto-restore)
+# ============================
+check_n8n_restored_health() {
+    if wget -q -T 10 -O /dev/null "$RESTORED_HEALTH_URL" 2>/dev/null; then
+        return 0
+    else
+        return 1
     fi
 }
 
@@ -99,13 +111,14 @@ trigger_restore() {
 main() {
     log "=== N8N Watchdog Started ==="
     log "Health URL: $N8N_HEALTH_URL"
+    log "Restored Health URL: $RESTORED_HEALTH_URL"
     log "Check interval: ${CHECK_INTERVAL}s"
     log "Max failures before restore: $MAX_FAILURES"
     
     send_telegram "🟢 *N8N Watchdog Started*%0A%0AMonitoring n8n health every ${CHECK_INTERVAL}s"
     
     while true; do
-        # Kiểm tra health
+        # Kiểm tra health (ưu tiên n8n chính; nếu đã restore thì chấp nhận n8n-restored healthy)
         if check_n8n_health; then
             if [ "$failure_count" -gt 0 ]; then
                 log "N8N recovered! Resetting failure count."
@@ -113,6 +126,13 @@ main() {
             fi
             failure_count=0
             log "N8N is healthy ✓"
+        elif check_n8n_restored_health; then
+            if [ "$failure_count" -gt 0 ]; then
+                log "Primary N8N is unhealthy but n8n-restored is healthy. Resetting failure count."
+            else
+                log "Primary N8N is unhealthy but n8n-restored is healthy."
+            fi
+            failure_count=0
         else
             failure_count=$((failure_count + 1))
             log "WARNING: N8N health check failed! (${failure_count}/${MAX_FAILURES})"

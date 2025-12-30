@@ -5,6 +5,7 @@
 # Environment files (chứa credentials nhạy cảm)
 *.env
 !.env.example
+backup-stack/backup.env
 
 # Backup data (dung lượng lớn, không nên commit)
 backup-stack/backup_volume/

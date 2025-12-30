@@ -78,7 +78,8 @@ Mở file `backup-stack/docker-compose.restore.yml` và chỉnh:
 - **Port**: Mặc định `5679` (tránh conflict với n8n cũ). Đổi nếu cần.
 - **Environment variables**: 
   - `N8N_HOST`, `WEBHOOK_URL` theo domain/IP của bạn.
-  - `DB_POSTGRESDB_PASSWORD` phải khớp với password trong script (mặc định: `n8n_secure_password_change_me`).
+  - Password DB của restored được lấy từ env (`POSTGRES_SOURCE_PASSWORD` / `DB_POSTGRESDB_PASSWORD`). Không hardcode trong file.
+  - `N8N_ENCRYPTION_KEY` phải khớp với production để credentials decrypt được.
 - **Redis** (nếu dùng queue mode): bỏ comment các dòng Redis.
 
 ### Bước 4: Dựng stack n8n mới
@@ -160,7 +161,7 @@ Nếu n8n mới đã chạy ổn định, bạn có thể:
 1. Sửa `backup-stack/backup.env`:
    - `POSTGRES_SOURCE_HOST=n8n-postgres-restored`
    - `POSTGRES_SOURCE_USER=n8n_user`
-   - `POSTGRES_SOURCE_PASSWORD=n8n_secure_password_change_me`
+   - `POSTGRES_SOURCE_PASSWORD=<password DB của n8n user (phải khớp production)>`
 
 2. Sửa `backup-stack/docker-compose.yml`:
    - Volume `n8n_data_from_stack` trỏ tới `n8n-storage-restored`:
@@ -194,7 +195,7 @@ Nếu n8n mới đã chạy ổn định, bạn có thể:
 
 ### N8n không kết nối được DB
 
-- Kiểm tra password trong `docker-compose.restore.yml` khớp với script.
+- Kiểm tra password trong `docker-compose.restore.yml` khớp với env.
 - Kiểm tra network `n8n_network` đã tồn tại:
   ```bash
   docker network ls | grep n8n_network
@@ -202,6 +203,7 @@ Nếu n8n mới đã chạy ổn định, bạn có thể:
 
 ### Credentials không hoạt động
 
+- Đảm bảo `N8N_ENCRYPTION_KEY` (env) khớp với key đã dùng trên production.
 - Kiểm tra file `config` trong volume đã có `encryptionKey` chưa:
   ```bash
   docker run --rm -v n8n-storage-restored:/data alpine cat /data/config

@@ -9,8 +9,8 @@ services:
   #  N8N SERVICE - CORE WORKFLOW AUTOMATION
   # ===========================================
   n8n:
-    # Sử dụng image chính thức của n8n, phiên bản 1.68.1
-    image: n8nio/n8n:1.68.1
+    # Sử dụng image chính thức của n8n, phiên bản latest
+    image: n8nio/n8n:latest
     container_name: n8n  # Tên container
     restart: unless-stopped  # Tự động khởi động lại nếu bị dừng
     hostname: n8n  # Tên hostname bên trong container
@@ -94,7 +94,7 @@ services:
     volumes:
       # Volume lưu trữ dữ liệu n8n (workflows, credentials, v.v.)
       - n8n_storage:/home/node/.n8n
-      # Đồng bộ thời gian với host
+      # Đồng bộ thởi gian với host
       - /etc/timezone:/etc/timezone:ro  # Read-only timezone
       - /etc/localtime:/etc/localtime:ro  # Read-only local time
 
@@ -150,7 +150,7 @@ services:
   #  - Scale worker: docker compose up -d --scale n8n-worker=3
   # ===========================================
   n8n-worker:
-    image: n8nio/n8n:1.68.1
+    image: n8nio/n8n:latest
     container_name: n8n-worker  # Note: Comment out to enable scaling: --scale n8n-worker=3
     restart: unless-stopped
     hostname: n8n-worker

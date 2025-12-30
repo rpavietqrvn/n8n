@@ -1,6 +1,6 @@
 # N8N Production Stack
 
-**Version:** 1.68.1  
+**Version:** latest  
 **Status:** ✅ Production Ready  
 **Last Cleanup:** 04/12/2025
 
