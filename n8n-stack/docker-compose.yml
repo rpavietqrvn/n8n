@@ -86,7 +86,7 @@ services:
 
     # CẤU HÌNH PORT VÀ MẠNG
     ports:
-      - "${N8N_PORT}:5678"  # Map port từ host vào container (host_port:container_port)
+      - "127.0.0.1:${N8N_PORT}:5678"  # Chỉ bind vào localhost, truy cập public đi qua Nginx reverse proxy
     networks:
       - n8n_network  # Kết nối tới mạng nội bộ n8n_network
 
