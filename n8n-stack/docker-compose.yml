@@ -138,7 +138,7 @@ services:
     # KIỂM TRA SỨC KHỎE (HEALTHCHECK)
     # Tự động kiểm tra trạng thái hoạt động của n8n
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:5678/healthz"]  # Endpoint kiểm tra (dùng wget + IPv4)
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://192.168.146.38/healthz"]  # Endpoint kiểm tra (dùng wget + IPv4)
       interval: 30s  # Kiểm tra mỗi 30 giây
       timeout: 10s   # Thời gian chờ tối đa
       retries: 3     # Số lần thử lại trước khi đánh dấu lỗi
